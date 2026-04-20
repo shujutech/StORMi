@@ -466,7 +466,174 @@ if (user.populate(conn)) {
 
 <br>
 
-### 3. **Polymorphism**
+### 3. **Object Composition**
+
+Object Composition is the OOP "has-a" relationship where one class contains another class as a member. StORMi maps this into the relational database using **instant variable tables** (`iv_` prefix) for single member objects and **instant variable with array** tables (`iw_` prefix) for collections of member objects.
+
+#### How It Works
+
+When a class declares a field with `FieldType.OBJECT`, StORMi creates an `iv_[classname]` table to store the relationship between the parent object's PK and the member object's `object_id`. Each `OBJECT` field becomes a column in this table. For `FieldType.OBJECTBOX`, a separate `iw_[classname]_[fieldname]` table is created per collection field.
+
+| Java Concept | DB Prefix | Example |
+|---|---|---|
+| Class table | `cz_` | `cz_addr` |
+| Single member link table | `iv_` | `iv_addr` |
+| Collection member link table | `iw_` | `iw_company_employee` |
+
+For a `Company` class that has a single `Addr` member and a collection of `Employee` members:
+
+````
+   cz_company          cz_addr         cz_employee
+       |                  |                 |
+   iv_company ------> cz_addr_pk    iw_company_employee --> cz_employee_pk
+   (addr column)                    (employee column)
+````
+
+#### Step 1: Define a Class with Composed Members
+
+Use `@ReflectField(type=FieldType.OBJECT)` for a single member-of relationship. Specify the member's class with the `clasz` attribute:
+
+````java
+public class Addr extends Clasz {
+    @ReflectField(type=FieldType.STRING, size=32, displayPosition=5)
+    public static String Addr1;
+
+    @ReflectField(type=FieldType.STRING, size=32, displayPosition=10)
+    public static String Addr2;
+
+    @ReflectField(type=FieldType.STRING, size=8, displayPosition=20)
+    public static String PostalCode;
+
+    // Composition: Addr "has-a" Country
+    @ReflectField(type=FieldType.OBJECT, deleteAsMember=false,
+        clasz=biz.shujutech.bznes.Country.class, displayPosition=35,
+        prefetch=true, lookup=true)
+    public static String Country;
+
+    // Composition: Addr "has-a" State
+    @ReflectField(type=FieldType.OBJECT, deleteAsMember=false,
+        clasz=biz.shujutech.bznes.State.class, displayPosition=40,
+        prefetch=true, lookup=true)
+    public static String State;
+
+    // Composition: Addr "has-a" City
+    @ReflectField(type=FieldType.OBJECT, deleteAsMember=false,
+        clasz=biz.shujutech.bznes.City.class, displayPosition=45,
+        prefetch=true, lookup=true)
+    public static String City;
+}
+````
+
+StORMi will automatically create:
+- `cz_addr` -- the class table with columns for `Addr1`, `Addr2`, `PostalCode`
+- `iv_addr` -- the composition link table with columns `cz_addr_pk`, `country`, `state`, `city` (each storing the member object's `object_id`)
+
+#### Step 2: Define a Collection of Composed Members
+
+Use `@ReflectField(type=FieldType.OBJECTBOX)` for a one-to-many composition. Internally backed by `FieldObjectBox<Ty>`:
+
+````java
+public class Company extends Clasz {
+    @ReflectField(type=FieldType.STRING, size=64, displayPosition=5)
+    public static String CompanyName;
+
+    // Composition: Company "has-a" Addr (single member)
+    @ReflectField(type=FieldType.OBJECT, deleteAsMember=true,
+        clasz=Addr.class, displayPosition=10)
+    public static String Address;
+
+    // Composition: Company "has-many" Employee (collection)
+    @ReflectField(type=FieldType.OBJECTBOX,
+        clasz=Employee.class, displayPosition=20)
+    public static String Employee;
+}
+````
+
+StORMi creates `iw_company_employee` with columns: parent PK, child `object_id`, and `leaf_class` (for polymorphic support).
+
+#### Step 3: Persist Composed Objects
+
+When `PersistCommit()` is called on the parent, StORMi recursively persists all composed member objects first, then updates the `iv_` or `iw_` link tables:
+
+````java
+// Create and populate the composed objects
+Addr addr = (Addr) ObjectBase.CreateObject(conn, Addr.class);
+addr.setValueStr(Addr.Addr1, "123 Main Street");
+addr.setValueStr(Addr.PostalCode, "10001");
+
+Company company = (Company) ObjectBase.CreateObject(conn, Company.class);
+company.setValueStr(Company.CompanyName, "Acme Corp");
+
+// Set the single member object
+company.setValueObject(conn, Company.Address, addr);
+
+// Add members to the collection
+Employee emp1 = (Employee) ObjectBase.CreateObject(conn, Employee.class);
+emp1.setName("John Doe");
+emp1.setDepartment("Engineering");
+company.getFieldObjectBox(Company.Employee).addValueObject(emp1);
+
+// Persist -- StORMi inserts company, addr, emp1, and links them
+// via iv_company and iw_company_employee automatically
+ObjectBase.PersistCommit(conn, company);
+````
+
+#### Step 4: Fetching Composed Members
+
+For `FieldType.OBJECT` fields, fetching behavior depends on the `prefetch` attribute:
+
+- **`prefetch=true`**: The member object is eagerly loaded when the parent is populated.
+- **`prefetch=false`** (default): The member is lazy-loaded on first access via `FieldObject.getValueObj(conn)`.
+
+For `FieldType.OBJECTBOX` fields, members are fetched on demand using `forEachMember`:
+
+````java
+Company company = (Company) ObjectBase.CreateObject(conn, Company.class);
+company.setValueStr(Company.CompanyName, "Acme Corp");
+if (company.populate(conn)) {
+    // Access single composed member (lazy or prefetched)
+    Addr addr = (Addr) company.getValueObject(conn, Company.Address);
+    String street = addr.getValueStr(Addr.Addr1);
+
+    // Iterate collection members
+    FieldObjectBox<Employee> employees = company.getFieldObjectBox(Company.Employee);
+    employees.forEachMember(conn, (Connection c, Employee emp) -> {
+        String name = emp.getName();
+        // process each employee
+        return true; // continue iteration
+    });
+}
+````
+
+#### Step 5: Cascade Deletion with `deleteAsMember`
+
+The `deleteAsMember` attribute controls whether deleting the parent also deletes the composed member:
+
+- **`deleteAsMember=true`**: The member object is deleted when the parent is deleted (true composition/ownership).
+- **`deleteAsMember=false`**: The link is removed but the member object is preserved (association/reference).
+
+````java
+// With deleteAsMember=true on Address field:
+company.deleteCommit(conn);
+// Deletes company, removes iv_company link, AND deletes the Addr object
+
+// With deleteAsMember=false on Country field in Addr:
+addr.deleteCommit(conn);
+// Deletes addr, removes iv_addr link, but Country object is preserved
+````
+
+#### Key Rules
+
+1. Composition is declared using `@ReflectField(type=FieldType.OBJECT, clasz=MemberClass.class)` for single members, or `FieldType.OBJECTBOX` for collections.
+2. Single member relationships are stored in `iv_[classname]` tables; collections in `iw_[classname]_[fieldname]` tables.
+3. `PersistCommit()` recursively persists all composed members before linking them.
+4. Use `deleteAsMember=true` for owned members (true composition) and `deleteAsMember=false` for shared/referenced members (association).
+5. Use `inline=true` to flatten a composed object's fields directly into the parent table (no separate link table).
+6. `FieldObjectBox` cannot be inline.
+
+<br>
+
+### 4. **Polymorphism**
 
 StORMi enables a member field (declared as a base or abstract type) to hold any concrete subclass at runtime. When persisting, StORMi stores the actual concrete class name in a `leaf_class` column alongside the object reference. When fetching, StORMi reads this column and instantiates the correct concrete type automatically.
 
