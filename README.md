@@ -190,7 +190,10 @@ To try out StORMi, go to the 'example' directory and compile 'Simple.java' and e
 
 Before executing the 'example', create a database (either postgresql or mysql) and configure it's jdbc properties in the file 'stormi.properties' (jdbcUser, jdbcPassword, jdbcUrl). The default configured is (schema: stormi, login: postgres, password: abc1234)
 
-## Inheritance
+
+## OO Implementations
+
+### Inheritance
 
 StORMi automatically maps Java class inheritance into relational database tables. When a class extends another class (which ultimately extends `Clasz`), StORMi creates separate tables for each class in the hierarchy and links them using intermediary **inheritance tables** prefixed with `ih_`.
 
