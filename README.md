@@ -190,6 +190,192 @@ To try out StORMi, go to the 'example' directory and compile 'Simple.java' and e
 
 Before executing the 'example', create a database (either postgresql or mysql) and configure it's jdbc properties in the file 'stormi.properties' (jdbcUser, jdbcPassword, jdbcUrl). The default configured is (schema: stormi, login: postgres, password: abc1234)
 
+## Inheritance
+
+StORMi automatically maps Java class inheritance into relational database tables. When a class extends another class (which ultimately extends `Clasz`), StORMi creates separate tables for each class in the hierarchy and links them using intermediary **inheritance tables** prefixed with `ih_`.
+
+### How It Works
+
+StORMi uses these naming conventions for database artifacts:
+
+| Java Concept | DB Prefix | Example |
+|---|---|---|
+| Class table | `cz_` | `cz_person` |
+| Inheritance link table | `ih_` | `ih_employee` |
+| Primary key column | `cz_<class>_pk` | `cz_person_pk` |
+
+When `CreateObject` is called, StORMi traverses the Java class hierarchy. For each non-abstract parent class (up until `Clasz`), it:
+
+1. Creates a table for the class (`cz_` prefix)
+2. Creates an inheritance link table (`ih_` prefix) containing the PKs of both child and parent
+
+For a 3-level hierarchy `User -> Employee -> Person`, the generated schema looks like this:
+
+````
+   user     employee   person
+     \       /  \       /   
+      \     /    \     /   
+     ih_user    ih_employee
+````
+
+The SQL to retrieve all the related records:
+
+````sql
+SELECT * FROM cz_user, ih_user, cz_employee, ih_employee, cz_person
+WHERE cz_user.cz_user_pk = ih_user.cz_user_pk
+AND ih_user.cz_employee_pk = cz_employee.cz_employee_pk
+AND cz_employee.cz_employee_pk = ih_employee.cz_employee_pk
+AND ih_employee.cz_person_pk = cz_person.cz_person_pk;
+````
+
+### Step 1: Define the Parent Class
+
+Every persistable class must ultimately extend `Clasz`. Define your base/parent class with its fields using the `@ReflectField` annotation:
+
+````java
+// Person class -> maps to table "cz_person"
+public class Person extends Clasz {
+
+    @ReflectField(type = FieldType.STRING, size = 64, displayPosition = 10)
+    public static String Name;
+
+    @ReflectField(type = FieldType.DATETIME, displayPosition = 20)
+    public static String BirthDate;
+
+    public String getName() throws Exception {
+        return this.getValueStr(Name);
+    }
+
+    public void setName(String aName) throws Exception {
+        this.setValueStr(Name, aName);
+    }
+}
+````
+
+### Step 2: Define the Child Class
+
+To create an inheritance relationship, simply extend the parent class using standard Java `extends`:
+
+````java
+// Employee class -> maps to table "cz_employee"
+// Inherits from Person, linked via "ih_employee" table
+public class Employee extends Person {
+
+    @ReflectField(type = FieldType.STRING, size = 32, displayPosition = 30)
+    public static String Department;
+
+    @ReflectField(type = FieldType.STRING, size = 16, displayPosition = 40)
+    public static String EmployeeId;
+
+    public String getDepartment() throws Exception {
+        return this.getValueStr(Department);
+    }
+
+    public void setDepartment(String aDept) throws Exception {
+        this.setValueStr(Department, aDept);
+    }
+
+    public String getEmployeeId() throws Exception {
+        return this.getValueStr(EmployeeId);
+    }
+
+    public void setEmployeeId(String aId) throws Exception {
+        this.setValueStr(EmployeeId, aId);
+    }
+}
+````
+
+### Step 3: Add More Levels (Optional)
+
+````java
+// User class -> maps to table "cz_user"
+// Inherits from Employee, linked via "ih_user" table
+public class User extends Employee {
+
+    @ReflectField(type = FieldType.STRING, size = 32, displayPosition = 50)
+    public static String LoginId;
+
+    @ReflectField(type = FieldType.STRING, size = 64, displayPosition = 60)
+    public static String Password;
+
+    public String getLoginId() throws Exception {
+        return this.getValueStr(LoginId);
+    }
+
+    public void setLoginId(String aLoginId) throws Exception {
+        this.setValueStr(LoginId, aLoginId);
+    }
+}
+````
+
+### Step 4: Create, Populate, and Persist
+
+Use `ObjectBase.CreateObject()` to instantiate the object. StORMi will automatically create all necessary tables (`cz_user`, `cz_employee`, `cz_person`, `ih_user`, `ih_employee`) via DDL if they don't exist.
+
+````java
+ObjectBase objectDb = new ObjectBase();
+String[] args = { "stormi.properties" };
+objectDb.setupApp(args);
+objectDb.setupDb();
+Connection conn = objectDb.getConnPool().getConnection();
+
+// Create a User object (automatically sets up the full inheritance chain)
+User user = (User) ObjectBase.CreateObject(conn, User.class);
+
+// Set fields from User
+user.setLoginId("jdoe");
+
+// Set fields from Employee (inherited)
+user.setDepartment("Engineering");
+user.setEmployeeId("EMP001");
+
+// Set fields from Person (inherited)
+user.setName("John Doe");
+
+// Persist - StORMi inserts into cz_user, cz_employee, cz_person,
+// and links them via ih_user and ih_employee automatically
+user.persistCommit(conn);
+````
+
+### Step 5: Fetching and Accessing Parent Fields
+
+When you fetch a `User` object, StORMi automatically traverses up the inheritance tree, joining through the `ih_` tables to populate all parent fields. You can also navigate to a specific parent object using `GetInheritanceObject`:
+
+````java
+User user = (User) ObjectBase.CreateObject(conn, User.class);
+user.setLoginId("jdoe");
+if (user.populate(conn)) {
+    // Access parent-level fields directly
+    String name = user.getName();           // from Person
+    String dept = user.getDepartment();     // from Employee
+
+    // Or get the specific parent object
+    Person personObj = (Person) Clasz.GetInheritanceObject(user, Person.class);
+}
+````
+
+### Step 6: Deleting
+
+Deletion also traverses the inheritance tree. StORMi tracks a child count on each parent record. A parent record is only deleted when its child count reaches zero.
+
+````java
+User user = (User) ObjectBase.CreateObject(conn, User.class);
+user.setLoginId("jdoe");
+if (user.populate(conn)) {
+    user.deleteCommit(conn);
+    // Deletes cz_user row, ih_user row, cz_employee row (if no other children),
+    // ih_employee row, and cz_person row (if no other children)
+}
+````
+
+### Key Rules
+
+1. All persistable classes must extend `Clasz` (directly or indirectly).
+2. Fields must be `public static String` annotated with `@ReflectField`.
+3. No SQL is needed -- StORMi generates all DDL and DML automatically.
+4. Abstract classes are handled differently: their fields are merged into the nearest concrete child class table rather than getting their own table.
+5. Each concrete class in the hierarchy gets its own `cz_` table and an `ih_` link table connecting it to its parent.
+
 ## Contact Us
 
 For any further support, please contact me at shujutech@gmail.com
