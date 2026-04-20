@@ -193,6 +193,80 @@ Before executing the 'example', create a database (either postgresql or mysql) a
 
 ## OO Implementations
 
+
+### Object Properties
+
+StORMi maps Java class properties to relational database structures using the `@ReflectField` annotation. Properties fall into two categories: **primitive types** (mapped directly to database columns) and **object types** (mapped via relationship tables or inline flattening).
+
+#### Primitive Type Properties
+
+Primitive properties use one of the built-in `FieldType` values: `STRING`, `INTEGER`, `LONG`, `FLOAT`, `BOOLEAN`, `DATE`, `DATETIME`, `ENCRYPT`, `HTML`, or `BASE64`. Each primitive type maps directly to a column in the class's database table.
+
+**Example:**
+
+````java
+public class Addr extends Clasz {
+    @ReflectField(type=FieldType.STRING, size=32, displayPosition=5)
+    public static String Addr1;
+
+    @ReflectField(type=FieldType.STRING, size=8, displayPosition=20)
+    public static String PostalCode;
+}
+````
+
+During class creation, `CreateFieldFromClass` in `Clasz.java` reads each `@ReflectField` annotation. For primitive types, it calls `createField(dbFieldName, fieldType)` (or the overload with size), which adds a column to the class's database table.
+
+#### Object Type Properties
+
+Object-type properties use `FieldType.OBJECT` (single reference) or `FieldType.OBJECTBOX` (collection). They require the `clasz` attribute to specify the target class.
+
+##### Single Object Reference (`FieldType.OBJECT`)
+
+Represents a "has-a" (member-of) relationship to another `Clasz`. Internally backed by `FieldObject<Ty>`.
+
+**Example:**
+
+````java
+@ReflectField(type=FieldType.OBJECT, deleteAsMember=false,
+    clasz=biz.shujutech.bznes.Country.class, displayPosition=35,
+    prefetch=true, lookup=true)
+public static String Country;
+````
+
+**Database mapping:** StORMi creates an `iv_[classname]` (instant variable) table that stores the parent's primary key and the child object's `object_id`. If the field is polymorphic, an additional `leaf_class` column stores the concrete class name.
+
+**Key annotation attributes for OBJECT fields:**
+
+| Attribute | Default | Description |
+|:---|:---|:---|
+| `clasz` | `Clasz.class` | The target class of the member object |
+| `inline` | `false` | If `true`, flatten the child's fields into the parent table |
+| `prefetch` | `false` | If `true`, eagerly load the member when the parent is populated |
+| `deleteAsMember` | `false` | If `true`, deleting the parent cascades to this member |
+| `polymorphic` | `false` | If `true`, store the concrete leaf class name for polymorphic resolution |
+| `lookup` | `false` | Marks the field as a lookup/reference data field |
+
+**Inline Object Fields:** When `inline=true`, the child object's fields are flattened directly into the parent's table (prefixed with the field name). No separate relationship table is created.
+
+**Lazy Fetching:** When `prefetch=false` (the default), the member object is loaded on-demand. `FieldObject.getValueObj()` checks the `FetchStatus` and triggers a database fetch only when the value is first accessed.
+
+**Polymorphic Fields:** If the declared type is abstract or `polymorphic=true`, StORMi stores the actual concrete class name in a `leaf_class` column. At fetch time, `ObjectBase.GetEffectiveClass` resolves the real type before instantiation.
+
+##### Collection of Objects (`FieldType.OBJECTBOX`)
+
+Represents a one-to-many relationship. Internally backed by `FieldObjectBox<Ty>`, which stores members in a `ConcurrentHashMap`.
+
+**Database mapping:** StORMi creates an `iw_[classname]_[fieldname]` table with three columns: the parent PK, the child `object_id`, and a `leaf_class` column for polymorphic support.
+
+#### Persistence Flow
+
+When `ObjectBase.PersistCommit()` is called:
+
+1. **Primitive fields** are inserted/updated directly as columns in the object's table.
+2. **OBJECT fields** -- the member object is persisted first (recursively), then the `iv_` relationship table is updated. Inline objects are flattened before the parent's insert.
+3. **OBJECTBOX fields** -- each member in the collection is persisted, then the `iw_` link table is updated.
+
+
 ### Inheritance
 
 StORMi automatically maps Java class inheritance into relational database tables. When a class extends another class (which ultimately extends `Clasz`), StORMi creates separate tables for each class in the hierarchy and links them using intermediary **inheritance tables** prefixed with `ih_`.
@@ -379,77 +453,7 @@ if (user.populate(conn)) {
 4. Abstract classes are handled differently: their fields are merged into the nearest concrete child class table rather than getting their own table.
 5. Each concrete class in the hierarchy gets its own `cz_` table and an `ih_` link table connecting it to its parent.
 
-### Object Properties
 
-StORMi maps Java class properties to relational database structures using the `@ReflectField` annotation. Properties fall into two categories: **primitive types** (mapped directly to database columns) and **object types** (mapped via relationship tables or inline flattening).
-
-#### Primitive Type Properties
-
-Primitive properties use one of the built-in `FieldType` values: `STRING`, `INTEGER`, `LONG`, `FLOAT`, `BOOLEAN`, `DATE`, `DATETIME`, `ENCRYPT`, `HTML`, or `BASE64`. Each primitive type maps directly to a column in the class's database table.
-
-**Example:**
-
-````java
-public class Addr extends Clasz {
-    @ReflectField(type=FieldType.STRING, size=32, displayPosition=5)
-    public static String Addr1;
-
-    @ReflectField(type=FieldType.STRING, size=8, displayPosition=20)
-    public static String PostalCode;
-}
-````
-
-During class creation, `CreateFieldFromClass` in `Clasz.java` reads each `@ReflectField` annotation. For primitive types, it calls `createField(dbFieldName, fieldType)` (or the overload with size), which adds a column to the class's database table.
-
-#### Object Type Properties
-
-Object-type properties use `FieldType.OBJECT` (single reference) or `FieldType.OBJECTBOX` (collection). They require the `clasz` attribute to specify the target class.
-
-##### Single Object Reference (`FieldType.OBJECT`)
-
-Represents a "has-a" (member-of) relationship to another `Clasz`. Internally backed by `FieldObject<Ty>`.
-
-**Example:**
-
-````java
-@ReflectField(type=FieldType.OBJECT, deleteAsMember=false,
-    clasz=biz.shujutech.bznes.Country.class, displayPosition=35,
-    prefetch=true, lookup=true)
-public static String Country;
-````
-
-**Database mapping:** StORMi creates an `iv_[classname]` (instant variable) table that stores the parent's primary key and the child object's `object_id`. If the field is polymorphic, an additional `leaf_class` column stores the concrete class name.
-
-**Key annotation attributes for OBJECT fields:**
-
-| Attribute | Default | Description |
-|:---|:---|:---|
-| `clasz` | `Clasz.class` | The target class of the member object |
-| `inline` | `false` | If `true`, flatten the child's fields into the parent table |
-| `prefetch` | `false` | If `true`, eagerly load the member when the parent is populated |
-| `deleteAsMember` | `false` | If `true`, deleting the parent cascades to this member |
-| `polymorphic` | `false` | If `true`, store the concrete leaf class name for polymorphic resolution |
-| `lookup` | `false` | Marks the field as a lookup/reference data field |
-
-**Inline Object Fields:** When `inline=true`, the child object's fields are flattened directly into the parent's table (prefixed with the field name). No separate relationship table is created.
-
-**Lazy Fetching:** When `prefetch=false` (the default), the member object is loaded on-demand. `FieldObject.getValueObj()` checks the `FetchStatus` and triggers a database fetch only when the value is first accessed.
-
-**Polymorphic Fields:** If the declared type is abstract or `polymorphic=true`, StORMi stores the actual concrete class name in a `leaf_class` column. At fetch time, `ObjectBase.GetEffectiveClass` resolves the real type before instantiation.
-
-##### Collection of Objects (`FieldType.OBJECTBOX`)
-
-Represents a one-to-many relationship. Internally backed by `FieldObjectBox<Ty>`, which stores members in a `ConcurrentHashMap`.
-
-**Database mapping:** StORMi creates an `iw_[classname]_[fieldname]` table with three columns: the parent PK, the child `object_id`, and a `leaf_class` column for polymorphic support.
-
-#### Persistence Flow
-
-When `ObjectBase.PersistCommit()` is called:
-
-1. **Primitive fields** are inserted/updated directly as columns in the object's table.
-2. **OBJECT fields** -- the member object is persisted first (recursively), then the `iv_` relationship table is updated. Inline objects are flattened before the parent's insert.
-3. **OBJECTBOX fields** -- each member in the collection is persisted, then the `iw_` link table is updated.
 
 ## Contact Us
 
