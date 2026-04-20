@@ -951,6 +951,8 @@ StORMi handles updating both the object reference and the `leaf_class` column, a
 5. **OBJECTBOX collections always support polymorphism** — the `iw_` table always includes a `leaf_class` column, and the fetch logic checks it.
 6. **No SQL required** — StORMi handles all DDL (table/column creation) and DML (insert/update/delete) for polymorphic relationships automatically.
 
+<br>
+
 ## Contact Us
 
 For any further support, please contact me at shujutech@gmail.com
