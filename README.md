@@ -1,4 +1,4 @@
-## StORMi
+# StORMi
 
 <img src="http://shujutech.mywire.org/img/dblogo5.png" alt="alt text" width="50%" height="50%">
 
@@ -201,10 +201,10 @@ Before executing the 'example', create a database (either postgresql or mysql) a
 
 <br>
 
-## OO Implementations
+# OO Implementations
 
 
-### 1. **Object Properties**
+## 1. **Object Properties**
 
 StORMi maps Java class properties to relational database structures using the `@ReflectField` annotation. Properties fall into two categories: **primitive types** (mapped directly to database columns) and **object types** (mapped via relationship tables or inline flattening).
 
@@ -278,7 +278,7 @@ When `ObjectBase.PersistCommit()` is called:
 
 <br>
 
-### 2. **Inheritance**
+## 2. **Inheritance**
 
 StORMi automatically maps Java class inheritance into relational database tables. When a class extends another class (which ultimately extends `Clasz`), StORMi creates separate tables for each class in the hierarchy and links them using intermediary **inheritance tables** prefixed with `ih_`.
 
@@ -466,7 +466,7 @@ if (user.populate(conn)) {
 
 <br>
 
-### 3. **Object Composition**
+## 3. **Object Composition**
 
 Object Composition is the OOP "has-a" relationship where one class contains another class as a member. StORMi maps this into the relational database using **instant variable tables** (`iv_` prefix) for single member objects and **instant variable with array** tables (`iw_` prefix) for collections of member objects.
 
@@ -633,7 +633,7 @@ addr.deleteCommit(conn);
 
 <br>
 
-### 4. **Polymorphism**
+## 4. **Polymorphism**
 
 StORMi enables a member field (declared as a base or abstract type) to hold any concrete subclass at runtime. When persisting, StORMi stores the actual concrete class name in a `leaf_class` column alongside the object reference. When fetching, StORMi reads this column and instantiates the correct concrete type automatically.
 
