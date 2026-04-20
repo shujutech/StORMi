@@ -466,6 +466,324 @@ if (user.populate(conn)) {
 
 <br>
 
+### 3. **Polymorphism**
+
+StORMi enables a member field (declared as a base or abstract type) to hold any concrete subclass at runtime. When persisting, StORMi stores the actual concrete class name in a `leaf_class` column alongside the object reference. When fetching, StORMi reads this column and instantiates the correct concrete type automatically.
+
+Polymorphism applies to two field types:
+- **`FieldType.OBJECT`** (single reference) — the `iv_` relationship table gains a `leaf_class` column
+- **`FieldType.OBJECTBOX`** (collection) — the `iw_` link table always includes a `leaf_class` column
+
+#### How It Works
+
+Polymorphism is activated in two ways:
+
+1. **Explicitly** — set `polymorphic=true` in the `@ReflectField` annotation
+2. **Automatically** — if the declared `clasz` is an abstract class, StORMi forces `polymorphic = true`
+
+#### Database Mapping
+
+For a **single object reference** (`FieldType.OBJECT`), StORMi creates an `iv_[classname]` table. When the field is polymorphic, this table includes an additional `leaf_class` column that stores the fully qualified Java class name of the concrete object.
+
+For a **collection** (`FieldType.OBJECTBOX`), StORMi creates an `iw_[classname]_[fieldname]` table with three columns: the parent PK, the child `object_id`, and a `leaf_class` column.
+
+| Table Type | Columns |
+|---|---|
+| `iv_[classname]` (OBJECT) | parent PK, member object ID, `leaf_class` (if polymorphic) |
+| `iw_[classname]_[fieldname]` (OBJECTBOX) | parent PK, member object ID, `leaf_class` |
+
+#### Step 1: Define the Abstract Base Class
+
+````java
+import biz.shujutech.db.object.Clasz;
+import biz.shujutech.db.relational.FieldType;
+import biz.shujutech.reflect.ReflectField;
+
+// Abstract class — no table is created for this class directly.
+// Its fields are merged into concrete subclass tables.
+public abstract class Party extends Clasz {
+
+    @ReflectField(type = FieldType.STRING, size = 128, displayPosition = 10)
+    public static String PartyName;
+
+    public String getPartyName() throws Exception {
+        return this.getValueStr(PartyName);
+    }
+
+    public void setPartyName(String aName) throws Exception {
+        this.setValueStr(PartyName, aName);
+    }
+}
+````
+
+Because `Party` is abstract, StORMi will not create a `cz_party` table. Instead, its fields (`PartyName`) will be merged into the concrete subclass tables.
+
+#### Step 2: Define Concrete Subclasses
+
+````java
+// Person -> maps to table "cz_person" with columns: party_name, phone_number
+public class Person extends Party {
+
+    @ReflectField(type = FieldType.STRING, size = 20, displayPosition = 20)
+    public static String PhoneNumber;
+
+    public String getPhoneNumber() throws Exception {
+        return this.getValueStr(PhoneNumber);
+    }
+
+    public void setPhoneNumber(String aPhone) throws Exception {
+        this.setValueStr(PhoneNumber, aPhone);
+    }
+}
+````
+
+````java
+// Organization -> maps to table "cz_organization" with columns: party_name, registration_no
+public class Organization extends Party {
+
+    @ReflectField(type = FieldType.STRING, size = 32, displayPosition = 20)
+    public static String RegistrationNo;
+
+    public String getRegistrationNo() throws Exception {
+        return this.getValueStr(RegistrationNo);
+    }
+
+    public void setRegistrationNo(String aRegNo) throws Exception {
+        this.setValueStr(RegistrationNo, aRegNo);
+    }
+}
+````
+
+#### Step 3: Define Asset Classes for OBJECTBOX Polymorphism
+
+````java
+// Base asset class (concrete, not abstract)
+public class Asset extends Clasz {
+
+    @ReflectField(type = FieldType.STRING, size = 64, displayPosition = 10)
+    public static String AssetName;
+
+    @ReflectField(type = FieldType.FLOAT, displayPosition = 20)
+    public static String AssetValue;
+
+    public String getAssetName() throws Exception {
+        return this.getValueStr(AssetName);
+    }
+
+    public void setAssetName(String aName) throws Exception {
+        this.setValueStr(AssetName, aName);
+    }
+}
+````
+
+````java
+// Vehicle is a type of Asset
+public class Vehicle extends Asset {
+
+    @ReflectField(type = FieldType.STRING, size = 16, displayPosition = 30)
+    public static String PlateNumber;
+
+    public String getPlateNumber() throws Exception {
+        return this.getValueStr(PlateNumber);
+    }
+
+    public void setPlateNumber(String aPlate) throws Exception {
+        this.setValueStr(PlateNumber, aPlate);
+    }
+}
+````
+
+````java
+// Building is a type of Asset
+public class Building extends Asset {
+
+    @ReflectField(type = FieldType.STRING, size = 128, displayPosition = 30)
+    public static String Address;
+
+    public String getAddress() throws Exception {
+        return this.getValueStr(Address);
+    }
+
+    public void setAddress(String aAddr) throws Exception {
+        this.setValueStr(Address, aAddr);
+    }
+}
+````
+
+#### Step 4: Define the Master Class with Polymorphic Fields
+
+````java
+public class Company extends Clasz {
+
+    @ReflectField(type = FieldType.STRING, size = 128, displayPosition = 10)
+    public static String CompanyName;
+
+    // Polymorphic single-object field: Owner can be a Person or Organization.
+    // Since Party is abstract, StORMi automatically sets polymorphic=true.
+    @ReflectField(type = FieldType.OBJECT, clasz = Party.class,
+        deleteAsMember = true, displayPosition = 20)
+    public static String Owner;
+
+    // Polymorphic collection field: Assets can be Vehicle, Building, etc.
+    // Since Asset is concrete, we explicitly set polymorphic=true.
+    @ReflectField(type = FieldType.OBJECTBOX, clasz = Asset.class,
+        polymorphic = true, deleteAsMember = true, displayPosition = 30)
+    public static String Assets;
+
+    public String getCompanyName() throws Exception {
+        return this.getValueStr(CompanyName);
+    }
+
+    public void setCompanyName(String aName) throws Exception {
+        this.setValueStr(CompanyName, aName);
+    }
+}
+````
+
+**Key points:**
+- The `Owner` field declares `clasz = Party.class`. Since `Party` is abstract, StORMi automatically forces `polymorphic = true` — you don't need to set it explicitly.
+- The `Assets` field declares `clasz = Asset.class`. Since `Asset` is a concrete class, you must explicitly set `polymorphic = true` to enable polymorphic behavior.
+
+#### Step 5: Database Tables Generated
+
+StORMi will automatically create the following tables:
+
+| Table | Purpose |
+|---|---|
+| `cz_company` | Company's own fields (`company_name`) |
+| `cz_person` | Person fields (`party_name`, `phone_number`) |
+| `cz_organization` | Organization fields (`party_name`, `registration_no`) |
+| `cz_asset` | Asset fields (`asset_name`, `asset_value`) |
+| `cz_vehicle` | Vehicle fields (`plate_number`) + `ih_vehicle` link to Asset |
+| `cz_building` | Building fields (`address`) + `ih_building` link to Asset |
+| `iv_company` | Member-of table with columns: `cz_company_pk`, `owner` (object ID), **`owner_leaf_class`** (concrete class name) |
+| `iw_company_assets` | Box member table with columns: `cz_company_pk`, `assets` (object ID), **`leaf_class`** (concrete class name) |
+
+The `leaf_class` columns are what enable polymorphism — they store the fully qualified Java class name (e.g., `com.example.Person` or `com.example.Vehicle`).
+
+#### Step 6: Persisting Polymorphic Objects
+
+````java
+ObjectBase objectDb = new ObjectBase();
+String[] args = { "stormi.properties" };
+objectDb.setupApp(args);
+objectDb.setupDb();
+Connection conn = objectDb.getConnPool().getConnection();
+
+// Create a Company
+Company company = (Company) ObjectBase.CreateObject(conn, Company.class);
+company.setCompanyName("Acme Corp");
+
+// Create a Person as the Owner (polymorphic — declared type is Party)
+Person owner = (Person) ObjectBase.CreateObject(conn, Person.class);
+owner.setPartyName("John Smith");
+owner.setPhoneNumber("555-1234");
+
+// Set the polymorphic owner field
+FieldObject<?> ownerField = (FieldObject<?>) company.getField(Company.Owner);
+ownerField.setValueObject(owner);
+
+// Add polymorphic assets
+FieldObjectBox<?> assetsField = (FieldObjectBox<?>) company.getField(Company.Assets);
+
+Vehicle truck = (Vehicle) ObjectBase.CreateObject(conn, Vehicle.class);
+truck.setAssetName("Delivery Truck");
+truck.setPlateNumber("ABC-1234");
+assetsField.addValueObjectFreeType(truck);
+
+Building warehouse = (Building) ObjectBase.CreateObject(conn, Building.class);
+warehouse.setAssetName("Main Warehouse");
+warehouse.setAddress("123 Industrial Ave");
+assetsField.addValueObjectFreeType(warehouse);
+
+// Persist — StORMi stores the concrete class names in leaf_class columns
+company.persistCommit(conn);
+````
+
+When persisted, the `iv_company` table will contain:
+
+| cz_company_pk | owner | owner_leaf_class |
+|---|---|---|
+| 1 | 42 | `com.example.Person` |
+
+And the `iw_company_assets` table will contain:
+
+| cz_company_pk | assets | leaf_class |
+|---|---|---|
+| 1 | 10 | `com.example.Vehicle` |
+| 1 | 11 | `com.example.Building` |
+
+#### Step 7: Fetching Polymorphic Objects
+
+When you fetch the `Company` object, StORMi automatically resolves the correct concrete types:
+
+````java
+Company company = (Company) ObjectBase.CreateObject(conn, Company.class);
+company.setCompanyName("Acme Corp");
+if (company.populate(conn)) {
+    // The Owner field automatically resolves to Person (not Party)
+    FieldObject<?> ownerField = (FieldObject<?>) company.getField(Company.Owner);
+    Clasz<?> owner = ownerField.getValueObj(conn);
+
+    // owner is actually a Person instance
+    if (owner instanceof Person) {
+        Person person = (Person) owner;
+        String phone = person.getPhoneNumber(); // works!
+    } else if (owner instanceof Organization) {
+        Organization org = (Organization) owner;
+        String regNo = org.getRegistrationNo(); // works!
+    }
+
+    // Iterate polymorphic collection — each member is the correct concrete type
+    FieldObjectBox<?> assetsField = (FieldObjectBox<?>) company.getField(Company.Assets);
+    assetsField.forEachMember(conn, (Connection bConn, Clasz<?> asset) -> {
+        if (asset instanceof Vehicle) {
+            Vehicle v = (Vehicle) asset;
+            System.out.println("Vehicle: " + v.getPlateNumber());
+        } else if (asset instanceof Building) {
+            Building b = (Building) asset;
+            System.out.println("Building: " + b.getAddress());
+        }
+        return true; // continue iterating
+    });
+}
+````
+
+StORMi's `GetEffectiveClass` reads the `leaf_class` value and uses `Class.forName()` to instantiate the correct type before populating the object.
+
+#### Step 8: Updating Polymorphic Fields
+
+You can change the concrete type of a polymorphic field. For example, changing the owner from a `Person` to an `Organization`:
+
+````java
+Company company = (Company) ObjectBase.CreateObject(conn, Company.class);
+company.setCompanyName("Acme Corp");
+if (company.populate(conn)) {
+    // Replace the Person owner with an Organization
+    Organization newOwner = (Organization) ObjectBase.CreateObject(conn, Organization.class);
+    newOwner.setPartyName("Acme Holdings Ltd");
+    newOwner.setRegistrationNo("REG-9876");
+
+    FieldObject<?> ownerField = (FieldObject<?>) company.getField(Company.Owner);
+    ownerField.setValueObject(newOwner);
+
+    // Persist — StORMi updates the leaf_class column to Organization
+    // If deleteAsMember=true, the old Person object is also deleted
+    company.persistCommit(conn);
+}
+````
+
+StORMi handles updating both the object reference and the `leaf_class` column, and optionally deletes the old member if `deleteAsMember=true`.
+
+#### Key Rules
+
+1. **Abstract declared types are automatically polymorphic.** If the `clasz` in `@ReflectField` is abstract, StORMi forces `polymorphic=true` — no need to set it explicitly.
+2. **Concrete declared types require explicit `polymorphic=true`.** If the base class is concrete but you want to store subclasses, you must set `polymorphic=true` in the annotation.
+3. **Abstract classes cannot be inline.** StORMi throws an error if you try to combine `inline=true` with an abstract class.
+4. **The `leaf_class` column stores the fully qualified class name** (e.g., `com.example.Person`). If you rename or move a class, existing database records will break.
+5. **OBJECTBOX collections always support polymorphism** — the `iw_` table always includes a `leaf_class` column, and the fetch logic checks it.
+6. **No SQL required** — StORMi handles all DDL (table/column creation) and DML (insert/update/delete) for polymorphic relationships automatically.
+
 ## Contact Us
 
 For any further support, please contact me at shujutech@gmail.com
