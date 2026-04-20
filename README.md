@@ -4,6 +4,7 @@
 
 StORMi maps Java POJO into relational databases. StORMi is the only true ORM that is able to map all OO concept into a relational database.
 
+<br>
 
 ## Supported Database
 
@@ -12,6 +13,7 @@ StORMi maps Java POJO into relational databases. StORMi is the only true ORM tha
 - Postgres
 - Oracle
 
+<br>
 
 ## Features
 
@@ -33,6 +35,8 @@ StORMi supports the following database operations:
 - Updating (like Persistence and Deletion, many complex class relationship is being manage by StORMi)
 - No SQL hence can be easily ported to any SQL database, DDL/DML can be done through java methods
 
+<br>
+
 ## Benefits
 
 - Allow full enterprise team to use standard OOP as the universal design model
@@ -40,6 +44,8 @@ StORMi supports the following database operations:
 - Allows team to have common understanding of a single design principal and concept
 - No duplication of enterprise information
 - Unlimited standardise scaling capabilities for all your enterprise information system
+
+<br>
 
 ## Examples
 
@@ -102,7 +108,9 @@ public class Addr extends Clasz {
 		}
 	}
 ````
-				
+
+<br>
+
 ## Quick Start
 
 1. Install Postgres and create a database name 'stormi' using 'postgres' user and 'abc1234' password.
@@ -165,6 +173,7 @@ public class Addr extends Clasz {
 
 9. Check your database for the created tables
 
+<br>
 
 ## Usage
 
@@ -190,11 +199,12 @@ To try out StORMi, go to the 'example' directory and compile 'Simple.java' and e
 
 Before executing the 'example', create a database (either postgresql or mysql) and configure it's jdbc properties in the file 'stormi.properties' (jdbcUser, jdbcPassword, jdbcUrl). The default configured is (schema: stormi, login: postgres, password: abc1234)
 
+<br>
 
 ## OO Implementations
 
 
-### Object Properties
+### 1. **Object Properties**
 
 StORMi maps Java class properties to relational database structures using the `@ReflectField` annotation. Properties fall into two categories: **primitive types** (mapped directly to database columns) and **object types** (mapped via relationship tables or inline flattening).
 
@@ -266,8 +276,9 @@ When `ObjectBase.PersistCommit()` is called:
 2. **OBJECT fields** -- the member object is persisted first (recursively), then the `iv_` relationship table is updated. Inline objects are flattened before the parent's insert.
 3. **OBJECTBOX fields** -- each member in the collection is persisted, then the `iw_` link table is updated.
 
+<br>
 
-### Inheritance
+### 2. **Inheritance**
 
 StORMi automatically maps Java class inheritance into relational database tables. When a class extends another class (which ultimately extends `Clasz`), StORMi creates separate tables for each class in the hierarchy and links them using intermediary **inheritance tables** prefixed with `ih_`.
 
@@ -305,7 +316,7 @@ AND cz_employee.cz_employee_pk = ih_employee.cz_employee_pk
 AND ih_employee.cz_person_pk = cz_person.cz_person_pk;
 ````
 
-### Step 1: Define the Parent Class
+#### Step 1: Define the Parent Class
 
 Every persistable class must ultimately extend `Clasz`. Define your base/parent class with its fields using the `@ReflectField` annotation:
 
@@ -329,7 +340,7 @@ public class Person extends Clasz {
 }
 ````
 
-### Step 2: Define the Child Class
+#### Step 2: Define the Child Class
 
 To create an inheritance relationship, simply extend the parent class using standard Java `extends`:
 
@@ -362,7 +373,7 @@ public class Employee extends Person {
 }
 ````
 
-### Step 3: Add More Levels (Optional)
+#### Step 3: Add More Levels (Optional)
 
 ````java
 // User class -> maps to table "cz_user"
@@ -385,7 +396,7 @@ public class User extends Employee {
 }
 ````
 
-### Step 4: Create, Populate, and Persist
+#### Step 4: Create, Populate, and Persist
 
 Use `ObjectBase.CreateObject()` to instantiate the object. StORMi will automatically create all necessary tables (`cz_user`, `cz_employee`, `cz_person`, `ih_user`, `ih_employee`) via DDL if they don't exist.
 
@@ -414,7 +425,7 @@ user.setName("John Doe");
 user.persistCommit(conn);
 ````
 
-### Step 5: Fetching and Accessing Parent Fields
+#### Step 5: Fetching and Accessing Parent Fields
 
 When you fetch a `User` object, StORMi automatically traverses up the inheritance tree, joining through the `ih_` tables to populate all parent fields. You can also navigate to a specific parent object using `GetInheritanceObject`:
 
@@ -431,7 +442,7 @@ if (user.populate(conn)) {
 }
 ````
 
-### Step 6: Deleting
+#### Step 6: Deleting
 
 Deletion also traverses the inheritance tree. StORMi tracks a child count on each parent record. A parent record is only deleted when its child count reaches zero.
 
@@ -445,7 +456,7 @@ if (user.populate(conn)) {
 }
 ````
 
-### Key Rules
+#### Key Rules
 
 1. All persistable classes must extend `Clasz` (directly or indirectly).
 2. Fields must be `public static String` annotated with `@ReflectField`.
@@ -453,7 +464,7 @@ if (user.populate(conn)) {
 4. Abstract classes are handled differently: their fields are merged into the nearest concrete child class table rather than getting their own table.
 5. Each concrete class in the hierarchy gets its own `cz_` table and an `ih_` link table connecting it to its parent.
 
-
+<br>
 
 ## Contact Us
 
