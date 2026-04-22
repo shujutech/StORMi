@@ -10,4 +10,5 @@ public @interface ReflectIndex {
 	public boolean isUnique() default false;
 	public int indexNo() default 0;
 	public SortOrder indexOrder() default SortOrder.ASC;
+	public boolean useLowerCase() default false;
 }

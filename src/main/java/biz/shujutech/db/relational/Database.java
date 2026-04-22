@@ -85,6 +85,7 @@ public class Database extends BaseDb {
 									field2Index.setIndexKeyNo(eachAttrib.indexNo);
 									field2Index.setIndexKeyOrder(eachAttrib.indexOrder);
 									field2Index.setUniqueKey(eachAttrib.isUnique);
+									field2Index.setUseLowerCase(eachAttrib.useLowerCase);
 									groupedIndexField.add(field2Index);
 								}
 							}
@@ -129,7 +130,15 @@ public class Database extends BaseDb {
 				strSql += ", ";
 			}
 			String keyOrder = SortOrder.AsString(eachField.getIndexKeyOrder());
-			strSql += eachField.getDbFieldName() + " " + keyOrder; 
+			if (eachField.isUseLowerCase()) {
+				if (GetDbType(aConn) == DbType.MYSQL) {
+					strSql += "(lower(" + eachField.getDbFieldName() + ")) " + keyOrder;
+				} else {
+					strSql += "lower(" + eachField.getDbFieldName() + ") " + keyOrder;
+				}
+			} else {
+				strSql += eachField.getDbFieldName() + " " + keyOrder;
+			}
 			totalField++;
 		}
 		if (totalField != 0) strSql += ")";
@@ -778,8 +787,14 @@ public class Database extends BaseDb {
 					}
 				} else {
 					if (eachField.getFormulaStr().isEmpty()) {
+						boolean hasLowerCase = false;
+						for (AttribIndex idx : eachField.indexes) {
+							if (idx.useLowerCase) { hasLowerCase = true; break; }
+						}
 						if (eachField.getValueObj(aConn) == null) {
 							sqlWhere += aTableName + "." + eachField.getDbFieldName() + " is NULL";
+						} else if (hasLowerCase) {
+							sqlWhere += "lower(" + aTableName + "." + eachField.getDbFieldName() + ") = lower(?)";
 						} else {
 							sqlWhere += aTableName + "." + eachField.getDbFieldName() + " = ?";
 						}
