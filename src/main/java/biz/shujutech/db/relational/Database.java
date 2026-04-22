@@ -26,7 +26,7 @@ public class Database extends BaseDb {
 	private static final int COMPARE_KEY_TABLE_INDEX = 2;
 
 	public enum DbType {
-		ORACLE, MYSQL, POSTGRESQL
+		ORACLE, MYSQL, MARIADB, POSTGRESQL
 	}
 
 	public Database() {
@@ -85,6 +85,12 @@ public class Database extends BaseDb {
 									field2Index.setIndexKeyNo(eachAttrib.indexNo);
 									field2Index.setIndexKeyOrder(eachAttrib.indexOrder);
 									field2Index.setUniqueKey(eachAttrib.isUnique);
+									if (eachAttrib.ignoreCase) {
+										if (eachField.getDbFieldType() != FieldType.STRING && eachField.getDbFieldType() != FieldType.HTML) {
+											throw new Hinderance("ignoreCase index is only supported on STRING/HTML fields, field: " + eachField.getDbFieldName() + ", type: " + eachField.getDbFieldType());
+										}
+										field2Index.setDbFieldName(GeneratedLowerColumnName(eachField.getDbFieldName()));
+									}
 									groupedIndexField.add(field2Index);
 								}
 							}
@@ -212,12 +218,57 @@ public class Database extends BaseDb {
 			}
 			totalField++;
 		}
+		// For each field that has an ignoreCase index, append a generated lowercase column
+		for (Field eachField : aTable.getMetaRec().getFieldBox().values()) {
+			if (eachField.getDbFieldType() == FieldType.OBJECT) continue;
+			if (eachField.isInline() || eachField.isFlatten()) continue;
+			boolean needLc = false;
+			for (AttribIndex eachAttrib : eachField.indexes) {
+				if (eachAttrib.ignoreCase) { needLc = true; break; }
+			}
+			if (needLc) {
+				if (eachField.getDbFieldType() != FieldType.STRING && eachField.getDbFieldType() != FieldType.HTML) {
+					throw new Hinderance("ignoreCase index is only supported on STRING/HTML fields, field: " + eachField.getDbFieldName() + ", type: " + eachField.getDbFieldType());
+				}
+				if (totalField == 0) {
+					strSql += "(";
+				} else {
+					strSql += ", ";
+				}
+				strSql += GeneratedLowerColumnDdl(aConn, eachField);
+				totalField++;
+			}
+		}
 		if (totalField != 0) {
 			strSql += ")";
 		}
 		strSql += CreateTablePostfix(aConn);
 		//App.logInfo(Database.class, "ddl_create_table: " + strSql);
 		ExecuteDdl(aConn, strSql);
+	}
+
+	public static String GeneratedLowerColumnName(String aFieldName) {
+		return aFieldName + "_lc";
+	}
+
+	public static String GeneratedLowerColumnDdl(Connection aConn, Field aField) throws Exception {
+		String fieldName = aField.getDbFieldName();
+		String lcName = GeneratedLowerColumnName(fieldName);
+		int size = aField.getFieldSize();
+		DbType dbType = GetDbType(aConn);
+		String result;
+		if (dbType == DbType.POSTGRESQL) {
+			result = lcName + " varchar(" + size + ") generated always as (lower(" + fieldName + ")) stored";
+		} else if (dbType == DbType.MYSQL) {
+			result = lcName + " varchar(" + size + ") generated always as (lower(" + fieldName + ")) stored";
+		} else if (dbType == DbType.MARIADB) {
+			result = lcName + " varchar(" + size + ") as (lower(" + fieldName + ")) persistent";
+		} else if (dbType == DbType.ORACLE) {
+			result = lcName + " varchar2(" + size + ") generated always as (lower(" + fieldName + "))";
+		} else {
+			throw new Hinderance("Unsupported db type for ignoreCase generated column: " + dbType);
+		}
+		return(result);
 	}
 
 	public void createPrimaryKey(Table aTable) throws Exception {
@@ -282,7 +333,7 @@ public class Database extends BaseDb {
 	}
 
 	public static void CreateSequence(Connection aConn, String aSeqName) throws Exception {
-		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.ORACLE || GetDbType(aConn) == DbType.POSTGRESQL) {
+		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB || GetDbType(aConn) == DbType.ORACLE || GetDbType(aConn) == DbType.POSTGRESQL) {
 			String sqlCreate = "create table " + aSeqName + " (id bigint not null)";
 			ExecuteDdl(aConn, sqlCreate);
 			String sqlInsert = "insert into " + aSeqName + " values(0)";
@@ -292,7 +343,7 @@ public class Database extends BaseDb {
 
 	public static long GetNextSequence(Connection aConn, String aSeqName) throws Exception {
 		long result = -1;
-		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.ORACLE || GetDbType(aConn) == DbType.POSTGRESQL) {
+		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB || GetDbType(aConn) == DbType.ORACLE || GetDbType(aConn) == DbType.POSTGRESQL) {
 			String sqlUpdate = "update " + aSeqName + " set id = last_insert_id(id + 1)";
 			String sqlSelect = "select last_insert_id() next_seq";
 			if (GetDbType(aConn) == DbType.POSTGRESQL)  {
@@ -385,7 +436,7 @@ public class Database extends BaseDb {
 
 	public String ddlFieldPk(boolean aOid) throws Exception {
 		String result = "";
-		if (this.getDbType() == DbType.MYSQL || this.getDbType() == DbType.ORACLE || this.getDbType() == DbType.POSTGRESQL) {
+		if (this.getDbType() == DbType.MYSQL || this.getDbType() == DbType.MARIADB || this.getDbType() == DbType.ORACLE || this.getDbType() == DbType.POSTGRESQL) {
 			if (aOid) {
 				result = "not null auto_increment";
 			} else {
@@ -399,7 +450,7 @@ public class Database extends BaseDb {
 
 	public String ddlPk(Table aTable) throws Exception {
 		String result = "";
-		if (this.getDbType() == DbType.MYSQL || this.getDbType() == DbType.ORACLE || this.getDbType() == DbType.POSTGRESQL) {
+		if (this.getDbType() == DbType.MYSQL || this.getDbType() == DbType.MARIADB || this.getDbType() == DbType.ORACLE || this.getDbType() == DbType.POSTGRESQL) {
 			result = "primary key (" + aTable.getPkName() + ")";
 		} else {
 			throw new Hinderance("Unknonwn database type, jdbc url: " + this.connPool.cpUrl);
@@ -419,7 +470,7 @@ public class Database extends BaseDb {
 			} else {
 				throw new Hinderance("Unsupported and unknown column type: " + aType);
 			}
-		} else if (GetDbType(aConn) == DbType.MYSQL) {
+		} else if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB) {
 			if (aType == FieldType.STRING) {
 				result = "varchar(" + aSize + ")";
 			} else if (aType == FieldType.HTML) {
@@ -474,7 +525,7 @@ public class Database extends BaseDb {
 	public static String CreateTablePostfix(Connection aConn) throws Exception {
 		String result = "";
 		if (GetDbType(aConn) == DbType.ORACLE) {
-		} else if (GetDbType(aConn) == DbType.MYSQL) {
+		} else if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB) {
 			result = " engine = innodb";
 		}
 		return(result);
@@ -484,6 +535,8 @@ public class Database extends BaseDb {
 		DbType result;
 		if (this.connPool.cpUrl.toLowerCase().contains("oracle")) {
 			result = DbType.ORACLE;
+		} else if (this.connPool.cpUrl.toLowerCase().contains("mariadb")) {
+			result = DbType.MARIADB;
 		} else if (this.connPool.cpUrl.toLowerCase().contains("mysql")) {
 			result = DbType.MYSQL;
 		} else if (this.connPool.cpUrl.toLowerCase().contains("postgresql")) {      
@@ -499,11 +552,21 @@ public class Database extends BaseDb {
 
 		DatabaseMetaData dmd = aConn.getMetaData();
 		String urlMeta = dmd.getURL();
-		if (urlMeta.toLowerCase().contains("oracle")) {
+		String productName = "";
+		try {
+			productName = dmd.getDatabaseProductName();
+		} catch (Exception ex) {
+			productName = "";
+		}
+		String urlLc = urlMeta == null ? "" : urlMeta.toLowerCase();
+		String prodLc = productName == null ? "" : productName.toLowerCase();
+		if (urlLc.contains("oracle") || prodLc.contains("oracle")) {
 			result = DbType.ORACLE;
-		} else if (urlMeta.toLowerCase().contains("mysql")) {
+		} else if (urlLc.contains("mariadb") || prodLc.contains("mariadb")) {
+			result = DbType.MARIADB;
+		} else if (urlLc.contains("mysql") || prodLc.contains("mysql")) {
 			result = DbType.MYSQL;
-		} else if (urlMeta.toLowerCase().contains("postgresql")) {
+		} else if (urlLc.contains("postgresql") || prodLc.contains("postgres")) {
 			result = DbType.POSTGRESQL;
 		} else {
 			throw new Hinderance("Fail to determine the database type for connection: " + urlMeta);
@@ -827,13 +890,13 @@ public class Database extends BaseDb {
 					sqlField2Update += ", ";
 				} 
 				if (eachField.getFormulaStr().isEmpty()) {
-					if (Database.GetDbType(aConn) == DbType.MYSQL  || Database.GetDbType(aConn) == Database.DbType.ORACLE) {
+					if (Database.GetDbType(aConn) == DbType.MYSQL  || Database.GetDbType(aConn) == DbType.MARIADB || Database.GetDbType(aConn) == Database.DbType.ORACLE) {
 						sqlField2Update += aTableName + "." + eachField.getDbFieldName() + " = ?";
 					} else {
 						sqlField2Update += eachField.getDbFieldName() + " = ?";
 					}
 				} else {
-					if (Database.GetDbType(aConn) == DbType.MYSQL  || Database.GetDbType(aConn) == Database.DbType.ORACLE) {
+					if (Database.GetDbType(aConn) == DbType.MYSQL  || Database.GetDbType(aConn) == DbType.MARIADB || Database.GetDbType(aConn) == Database.DbType.ORACLE) {
 						sqlField2Update += aTableName + "." + eachField.getDbFieldName() + " = " + eachField.getFormulaStr();
 					} else {
 						sqlField2Update += eachField.getDbFieldName() + " = " + eachField.getFormulaStr();
@@ -913,7 +976,7 @@ public class Database extends BaseDb {
 
 	public static void AlterTableRenameIndex(Connection aConn, String aTableName, String aOldIndexName, String aNewIndexName) throws Exception {
 		String sqlRename = "";
-		if (GetDbType(aConn) == DbType.MYSQL) {
+		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB) {
 			// MySQL prior to 5.7 need to drop and re-create, kiv
 			sqlRename = "alter table " + aTableName + " rename index " + aOldIndexName + " to " + aNewIndexName;
 		} else if (GetDbType(aConn) == DbType.POSTGRESQL) {
@@ -930,7 +993,7 @@ public class Database extends BaseDb {
 	public static void AlterIndexRenamePk(Connection aConn, String aOldTableName, String aNewTableName) throws Exception {
 		String sqlRename = "";
 		boolean doExecute = true;
-		if (GetDbType(aConn) == DbType.MYSQL) {
+		if (GetDbType(aConn) == DbType.MYSQL || GetDbType(aConn) == DbType.MARIADB) {
 			doExecute = false;
 			App.logInfo("MYSQL primary key is system generated, will not do any renaming");
 		} else if (GetDbType(aConn) == DbType.POSTGRESQL) {

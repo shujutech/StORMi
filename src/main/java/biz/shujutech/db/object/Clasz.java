@@ -1396,6 +1396,7 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 							attribIndex.isUnique = eachReflect.isUnique();
 							attribIndex.indexNo = eachReflect.indexNo();
 							attribIndex.indexOrder = eachReflect.indexOrder();
+							attribIndex.ignoreCase = eachReflect.ignoreCase();
 							uniqueIndexes.add(attribIndex);
 						}
 						attribField.indexes = uniqueIndexes;
