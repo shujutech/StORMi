@@ -271,6 +271,29 @@ public class Database extends BaseDb {
 		return(result);
 	}
 
+	public static void AlterTableAddIgnoreCaseColumns(Connection aConn, Table aTable) throws Exception {
+		Table existingTable = new Table(aTable.getTableName());
+		existingTable.initMeta(aConn);
+		for (Field eachField : aTable.getMetaRec().getFieldBox().values()) {
+			if (eachField.getDbFieldType() == FieldType.OBJECT) continue;
+			if (eachField.getDbFieldType() == FieldType.OBJECTBOX) continue;
+			if (eachField.isInline() || eachField.isFlatten()) continue;
+			boolean needLc = false;
+			for (AttribIndex eachAttrib : eachField.indexes) {
+				if (eachAttrib.ignoreCase) { needLc = true; break; }
+			}
+			if (needLc == false) continue;
+			if (eachField.getDbFieldType() != FieldType.STRING && eachField.getDbFieldType() != FieldType.HTML) {
+				throw new Hinderance("ignoreCase index is only supported on STRING/HTML fields, field: " + eachField.getDbFieldName() + ", type: " + eachField.getDbFieldType());
+			}
+			String lcName = GeneratedLowerColumnName(eachField.getDbFieldName());
+			if (existingTable.fieldExist(lcName)) continue;
+			String alterSql = "alter table " + aTable.getTableName() + " add " + GeneratedLowerColumnDdl(aConn, eachField);
+			App.logInfo(Database.class, "Adding generated lowercase column: " + alterSql);
+			ExecuteDdl(aConn, alterSql);
+		}
+	}
+
 	public void createPrimaryKey(Table aTable) throws Exception {
 		Connection conn = this.connPool.getConnection();
 		try {

@@ -1299,6 +1299,9 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 			Database.CreatePrimaryKey(aConn, clszObject); // do alter table to create the primary key
 			Database.CreateSequence(aConn, clszObject.createSequenceTableName()); // alter the table to make the primary key auto increment
 			Database.CreateIndexes(aConn, clszObject.getTableName(), clszObject.getInstantRecord());
+		} else if (aDoDdl) {
+			// Table already exists: ensure any ignoreCase generated _lc columns are present.
+			Database.AlterTableAddIgnoreCaseColumns(aConn, clszObject);
 		}
 
 		return(clszObject);
