@@ -222,11 +222,7 @@ public class Database extends BaseDb {
 		for (Field eachField : aTable.getMetaRec().getFieldBox().values()) {
 			if (eachField.getDbFieldType() == FieldType.OBJECT) continue;
 			if (eachField.isInline() || eachField.isFlatten()) continue;
-			boolean needLc = false;
-			for (AttribIndex eachAttrib : eachField.indexes) {
-				if (eachAttrib.ignoreCase) { needLc = true; break; }
-			}
-			if (needLc) {
+			if (IsIgnoreCase(aTable.getTableName(), eachField)) {
 				if (eachField.getDbFieldType() != FieldType.STRING && eachField.getDbFieldType() != FieldType.HTML) {
 					throw new Hinderance("ignoreCase index is only supported on STRING/HTML fields, field: " + eachField.getDbFieldName() + ", type: " + eachField.getDbFieldType());
 				}
@@ -249,6 +245,14 @@ public class Database extends BaseDb {
 
 	public static String GeneratedLowerColumnName(String aFieldName) {
 		return aFieldName + "_lc";
+	}
+
+	public static boolean IsIgnoreCase(String aTableName, Field aField) {
+		if (aField == null || aField.indexes == null) return false;
+		for (AttribIndex eachAttrib : aField.indexes) {
+			if (eachAttrib.ignoreCase) return true;
+		}
+		return false;
 	}
 
 	public static String GeneratedLowerColumnDdl(Connection aConn, Field aField) throws Exception {
@@ -278,11 +282,7 @@ public class Database extends BaseDb {
 			if (eachField.getDbFieldType() == FieldType.OBJECT) continue;
 			if (eachField.getDbFieldType() == FieldType.OBJECTBOX) continue;
 			if (eachField.isInline() || eachField.isFlatten()) continue;
-			boolean needLc = false;
-			for (AttribIndex eachAttrib : eachField.indexes) {
-				if (eachAttrib.ignoreCase) { needLc = true; break; }
-			}
-			if (needLc == false) continue;
+			if (IsIgnoreCase(aTable.getTableName(), eachField) == false) continue;
 			if (eachField.getDbFieldType() != FieldType.STRING && eachField.getDbFieldType() != FieldType.HTML) {
 				throw new Hinderance("ignoreCase index is only supported on STRING/HTML fields, field: " + eachField.getDbFieldName() + ", type: " + eachField.getDbFieldType());
 			}
