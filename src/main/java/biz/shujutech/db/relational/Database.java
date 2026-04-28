@@ -4,7 +4,10 @@ import biz.shujutech.base.App;
 import biz.shujutech.base.Connection;
 import biz.shujutech.base.DateAndTime;
 import biz.shujutech.base.Hinderance;
+import biz.shujutech.db.object.Clasz;
 import biz.shujutech.reflect.AttribIndex;
+import biz.shujutech.reflect.ReflectField;
+import biz.shujutech.reflect.ReflectIndex;
 import biz.shujutech.util.Generic;
 import com.google.common.collect.Multimap;
 import java.io.ByteArrayInputStream;
@@ -247,10 +250,33 @@ public class Database extends BaseDb {
 		return aFieldName + "_lc";
 	}
 
+	/**
+	 * Determines if the given field is annotated with ignoreCase=true on any of its
+	 * @ReflectIndex entries, by resolving the canonical Clasz from aTableName and
+	 * looking up the matching @ReflectField annotation by db field name.
+	 * The passed-in aField may be any Field instance and is only used to obtain the
+	 * db field name; its own indexes list is NOT consulted.
+	 */
 	public static boolean IsIgnoreCase(String aTableName, Field aField) {
-		if (aField == null || aField.indexes == null) return false;
-		for (AttribIndex eachAttrib : aField.indexes) {
-			if (eachAttrib.ignoreCase) return true;
+		if (aTableName == null || aField == null) return false;
+		Class<? extends Clasz<?>> claszClass = Clasz.GetClaszByTableName(aTableName);
+		if (claszClass == null) return false;
+		String targetDbFieldName = aField.getDbFieldName();
+		if (targetDbFieldName == null) return false;
+		Class<?> walker = claszClass;
+		while (walker != null && walker != Object.class) {
+			for (java.lang.reflect.Field reflectField : walker.getDeclaredFields()) {
+				ReflectField annotation = reflectField.getAnnotation(ReflectField.class);
+				if (annotation == null) continue;
+				String reflectDbFieldName = Clasz.CreateDbFieldName(reflectField.getName(), "");
+				if (reflectDbFieldName.equals(targetDbFieldName)) {
+					for (ReflectIndex idx : annotation.indexes()) {
+						if (idx.ignoreCase()) return true;
+					}
+					return false;
+				}
+			}
+			walker = walker.getSuperclass();
 		}
 		return false;
 	}

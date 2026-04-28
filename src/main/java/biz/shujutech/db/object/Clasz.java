@@ -61,6 +61,7 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 	public static final long NOT_INITIALIZE_OBJECT_ID = -1;
 	public static final Long INSTANT_RECORD_AT = Long.valueOf(0); // instantiated objeck is always at this location in the table clszObject
 	public static final String TABLE_NAME_PREFIX = "cz_";
+	private static final java.util.concurrent.ConcurrentHashMap<String, Class<? extends Clasz<?>>> CLASZ_BY_TABLE_NAME = new java.util.concurrent.ConcurrentHashMap<>();
 	public static final String SEQUENCE_NAME_PREFIX = "sq_";
 	public static final boolean PRE_CREATE_OBJECT= false; // if set to true, will create empty objects and place into FieldObject value
 	public static final int RECURSIVE_DEPTH = 8;
@@ -162,6 +163,19 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 		super();
 		this.setTableName(CreateTableName(this.getClass()));
 		this.setUniqueIndexName(CreateUniqueIndexName(this.getClass()));
+		RegisterClaszByTableName(this.getTableName(), this.getClass());
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void RegisterClaszByTableName(String aTableName, Class<?> aClass) {
+		if (aTableName == null || aTableName.isEmpty() || aClass == null) return;
+		if (Clasz.class.isAssignableFrom(aClass) == false) return;
+		CLASZ_BY_TABLE_NAME.putIfAbsent(aTableName, (Class<? extends Clasz<?>>) aClass);
+	}
+
+	public static Class<? extends Clasz<?>> GetClaszByTableName(String aTableName) {
+		if (aTableName == null) return null;
+		return CLASZ_BY_TABLE_NAME.get(aTableName);
 	}
 
 	public Record getInstantRecord() {
