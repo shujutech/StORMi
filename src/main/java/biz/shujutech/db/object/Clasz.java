@@ -164,6 +164,37 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 		this.setUniqueIndexName(CreateUniqueIndexName(this.getClass()));
 	}
 
+	/**
+	 * Resolves a {@link Clasz} subclass from a table name by inverting
+	 * {@link #CreateTableName(Class)}: strip the table name prefix, convert the
+	 * snake_case body back to CamelCase to recover the class simple name, then
+	 * scan the classpath for the matching Clasz subclass. Returns {@code null}
+	 * if the table name is malformed or no matching class is on the classpath.
+	 */
+	@SuppressWarnings("unchecked")
+	public static Class<? extends Clasz<?>> GetClaszByTableName(String aTableName) throws Exception {
+		if (aTableName == null) return null;
+		String prefix = GetTableNamePrefix();
+		if (aTableName.startsWith(prefix) == false) return null;
+		String dbBody = aTableName.substring(prefix.length());
+		String simpleClassName = Database.Db2JavaTableName(dbBody);
+		ClassLoader loader = Thread.currentThread().getContextClassLoader();
+		if (loader == null) loader = Clasz.class.getClassLoader();
+		com.google.common.reflect.ClassPath cp = com.google.common.reflect.ClassPath.from(loader);
+		for (com.google.common.reflect.ClassPath.ClassInfo ci : cp.getAllClasses()) {
+			if (ci.getSimpleName().equals(simpleClassName) == false) continue;
+			try {
+				Class<?> c = ci.load();
+				if (Clasz.class.isAssignableFrom(c) && c != Clasz.class) {
+					return (Class<? extends Clasz<?>>) c;
+				}
+			} catch (Throwable ignore) {
+				// skip classes that fail to load
+			}
+		}
+		return null;
+	}
+
 	public Record getInstantRecord() {
 		return(this.getRecordBox().get(Clasz.INSTANT_RECORD_AT));
 	}
@@ -1299,6 +1330,9 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 			Database.CreatePrimaryKey(aConn, clszObject); // do alter table to create the primary key
 			Database.CreateSequence(aConn, clszObject.createSequenceTableName()); // alter the table to make the primary key auto increment
 			Database.CreateIndexes(aConn, clszObject.getTableName(), clszObject.getInstantRecord());
+		} else if (aDoDdl) {
+			// Table already exists: ensure any ignoreCase generated _lc columns are present.
+			Database.AlterTableAddIgnoreCaseColumns(aConn, clszObject);
 		}
 
 		return(clszObject);
@@ -1396,6 +1430,7 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 							attribIndex.isUnique = eachReflect.isUnique();
 							attribIndex.indexNo = eachReflect.indexNo();
 							attribIndex.indexOrder = eachReflect.indexOrder();
+							attribIndex.ignoreCase = eachReflect.ignoreCase();
 							uniqueIndexes.add(attribIndex);
 						}
 						attribField.indexes = uniqueIndexes;
