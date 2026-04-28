@@ -61,7 +61,6 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 	public static final long NOT_INITIALIZE_OBJECT_ID = -1;
 	public static final Long INSTANT_RECORD_AT = Long.valueOf(0); // instantiated objeck is always at this location in the table clszObject
 	public static final String TABLE_NAME_PREFIX = "cz_";
-	private static final java.util.concurrent.ConcurrentHashMap<String, Class<? extends Clasz<?>>> CLASZ_BY_TABLE_NAME = new java.util.concurrent.ConcurrentHashMap<>();
 	public static final String SEQUENCE_NAME_PREFIX = "sq_";
 	public static final boolean PRE_CREATE_OBJECT= false; // if set to true, will create empty objects and place into FieldObject value
 	public static final int RECURSIVE_DEPTH = 8;
@@ -163,19 +162,37 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 		super();
 		this.setTableName(CreateTableName(this.getClass()));
 		this.setUniqueIndexName(CreateUniqueIndexName(this.getClass()));
-		RegisterClaszByTableName(this.getTableName(), this.getClass());
 	}
 
+	/**
+	 * Resolves a {@link Clasz} subclass from a table name by inverting
+	 * {@link #CreateTableName(Class)}: strip the table name prefix, convert the
+	 * snake_case body back to CamelCase to recover the class simple name, then
+	 * scan the classpath for the matching Clasz subclass. Returns {@code null}
+	 * if the table name is malformed or no matching class is on the classpath.
+	 */
 	@SuppressWarnings("unchecked")
-	private static void RegisterClaszByTableName(String aTableName, Class<?> aClass) {
-		if (aTableName == null || aTableName.isEmpty() || aClass == null) return;
-		if (Clasz.class.isAssignableFrom(aClass) == false) return;
-		CLASZ_BY_TABLE_NAME.putIfAbsent(aTableName, (Class<? extends Clasz<?>>) aClass);
-	}
-
-	public static Class<? extends Clasz<?>> GetClaszByTableName(String aTableName) {
+	public static Class<? extends Clasz<?>> GetClaszByTableName(String aTableName) throws Exception {
 		if (aTableName == null) return null;
-		return CLASZ_BY_TABLE_NAME.get(aTableName);
+		String prefix = GetTableNamePrefix();
+		if (aTableName.startsWith(prefix) == false) return null;
+		String dbBody = aTableName.substring(prefix.length());
+		String simpleClassName = Database.Db2JavaTableName(dbBody);
+		ClassLoader loader = Thread.currentThread().getContextClassLoader();
+		if (loader == null) loader = Clasz.class.getClassLoader();
+		com.google.common.reflect.ClassPath cp = com.google.common.reflect.ClassPath.from(loader);
+		for (com.google.common.reflect.ClassPath.ClassInfo ci : cp.getAllClasses()) {
+			if (ci.getSimpleName().equals(simpleClassName) == false) continue;
+			try {
+				Class<?> c = ci.load();
+				if (Clasz.class.isAssignableFrom(c) && c != Clasz.class) {
+					return (Class<? extends Clasz<?>>) c;
+				}
+			} catch (Throwable ignore) {
+				// skip classes that fail to load
+			}
+		}
+		return null;
 	}
 
 	public Record getInstantRecord() {

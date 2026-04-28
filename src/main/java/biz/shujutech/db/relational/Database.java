@@ -257,7 +257,7 @@ public class Database extends BaseDb {
 	 * The passed-in aField may be any Field instance and is only used to obtain the
 	 * db field name; its own indexes list is NOT consulted.
 	 */
-	public static boolean IsIgnoreCase(String aTableName, Field aField) {
+	public static boolean IsIgnoreCase(String aTableName, Field aField) throws Exception {
 		if (aTableName == null || aField == null) return false;
 		Class<? extends Clasz<?>> claszClass = Clasz.GetClaszByTableName(aTableName);
 		if (claszClass == null) return false;
@@ -651,6 +651,29 @@ public class Database extends BaseDb {
 		String firstChar = (Character.valueOf(dbFieldName.charAt(0))).toString();
 		String javaName = dbFieldName.replaceFirst(firstChar, firstChar.toLowerCase());
 		return(Java2DbName(javaName));
+	}
+
+	/**
+	 * Inverse of {@link #Java2DbTableName(String)} for the body portion
+	 * (after the table name prefix is stripped). Converts a snake_case db name
+	 * back to a CamelCase Java simple name (e.g. "leave_form" -> "LeaveForm").
+	 */
+	public static String Db2JavaTableName(String aDbName) {
+		if (aDbName == null || aDbName.isEmpty()) return aDbName;
+		StringBuilder sb = new StringBuilder();
+		boolean upperNext = true;
+		for (int i = 0; i < aDbName.length(); i++) {
+			char c = aDbName.charAt(i);
+			if (c == '_') {
+				upperNext = true;
+			} else if (upperNext) {
+				sb.append(Character.toUpperCase(c));
+				upperNext = false;
+			} else {
+				sb.append(c);
+			}
+		}
+		return sb.toString();
 	}
 
 	private static String Java2DbName(String aFieldName) {
