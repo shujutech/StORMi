@@ -7,4 +7,5 @@ public class AttribIndex {
 	public boolean isUnique;
 	public int indexNo;
 	public SortOrder indexOrder;
+	public boolean ignoreCase;
 }
