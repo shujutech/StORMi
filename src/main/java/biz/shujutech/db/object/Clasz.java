@@ -1446,6 +1446,17 @@ public class Clasz<Ty> extends Table implements Comparable<Ty> {
 						reflectField.set(attribField.fieldName, dbFieldName); // set the field name into the static variable
 					}
 
+					// register fields that opt into ignoreCase indexing so Database.IsIgnoreCase
+					// can answer with an O(1) map lookup at DDL time instead of scanning the classpath.
+					if (attribField.indexes != null) {
+						for (AttribIndex eachAttribIndex : attribField.indexes) {
+							if (eachAttribIndex.ignoreCase) {
+								Database.RegisterIgnoreCase(aParent.getTableName(), dbFieldName);
+								break;
+							}
+						}
+					}
+
 					// programmer definition error, for diagnosing purpose only
 					if (fieldType == FieldType.OBJECT || fieldType == FieldType.OBJECTBOX) {
 						//if (eachAnnotation.clasz().isEmpty()) {

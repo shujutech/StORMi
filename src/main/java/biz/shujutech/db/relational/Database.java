@@ -251,25 +251,73 @@ public class Database extends BaseDb {
 	}
 
 	/**
-	 * Determines if the given field is annotated with ignoreCase=true on any of its
-	 * @ReflectIndex entries, by resolving the canonical Clasz from aTableName and
-	 * looking up the matching @ReflectField annotation by db field name.
-	 * The passed-in aField may be any Field instance and is only used to obtain the
-	 * db field name; its own indexes list is NOT consulted.
+	 * Maximum number of (tableName, fieldName) entries the ignoreCase fast-lookup
+	 * registry will track. If a project declares more ignoreCase fields than this,
+	 * an error is logged once and {@link #IsIgnoreCase(String, Field)} falls back
+	 * to a slow per-call classpath scan instead of failing.
+	 */
+	public static final int MAX_IGNORE_CASE_REGISTRY_SIZE = 1024;
+
+	private static final java.util.concurrent.ConcurrentHashMap<String, Boolean> IGNORE_CASE_REGISTRY = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final java.util.concurrent.atomic.AtomicBoolean IGNORE_CASE_REGISTRY_OVERFLOW = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+	private static String BuildIgnoreCaseKey(String aTableName, String aDbFieldName) {
+		return aTableName + "::" + aDbFieldName;
+	}
+
+	/**
+	 * Records that the given (tableName, dbFieldName) pair has
+	 * {@code ignoreCase=true} on at least one of its {@code @ReflectIndex}
+	 * annotations. Should be called once per ignoreCase field as the class
+	 * metadata is parsed. If the registry exceeds {@link #MAX_IGNORE_CASE_REGISTRY_SIZE}
+	 * entries, the overflow flag is set and an error is logged once; further
+	 * lookups will fall back to the slow path.
+	 */
+	public static void RegisterIgnoreCase(String aTableName, String aDbFieldName) {
+		if (aTableName == null || aDbFieldName == null) return;
+		if (IGNORE_CASE_REGISTRY.size() >= MAX_IGNORE_CASE_REGISTRY_SIZE) {
+			if (IGNORE_CASE_REGISTRY_OVERFLOW.compareAndSet(false, true)) {
+				App.logEror(Database.class, "ignoreCase registry exceeded MAX_IGNORE_CASE_REGISTRY_SIZE=" + MAX_IGNORE_CASE_REGISTRY_SIZE + "; subsequent IsIgnoreCase lookups will fall back to slow classpath scan");
+			}
+			return;
+		}
+		IGNORE_CASE_REGISTRY.put(BuildIgnoreCaseKey(aTableName, aDbFieldName), Boolean.TRUE);
+	}
+
+	/**
+	 * Determines if the given field is annotated with {@code ignoreCase=true} on
+	 * any of its {@code @ReflectIndex} entries. The passed-in {@code aField} is
+	 * only used to obtain its db field name; its own {@code indexes} list is NOT
+	 * consulted (the canonical {@link Clasz} metadata is the source of truth).
+	 * <p>
+	 * Fast path: if the registry has not overflowed, an O(1) lookup against the
+	 * map populated when the class metadata was parsed.
+	 * <p>
+	 * Slow fallback: when the registry has overflowed, resolves the {@link Clasz}
+	 * subclass from {@code aTableName} (by inverting {@link #Java2DbTableName} and
+	 * scanning the classpath) and walks its {@code @ReflectField} annotations to
+	 * find the matching {@code @ReflectIndex(ignoreCase=true)}.
 	 */
 	public static boolean IsIgnoreCase(String aTableName, Field aField) throws Exception {
 		if (aTableName == null || aField == null) return false;
+		String dbFieldName = aField.getDbFieldName();
+		if (dbFieldName == null) return false;
+		if (IGNORE_CASE_REGISTRY_OVERFLOW.get() == false) {
+			return IGNORE_CASE_REGISTRY.containsKey(BuildIgnoreCaseKey(aTableName, dbFieldName));
+		}
+		return IsIgnoreCaseSlow(aTableName, dbFieldName);
+	}
+
+	private static boolean IsIgnoreCaseSlow(String aTableName, String aDbFieldName) throws Exception {
 		Class<? extends Clasz<?>> claszClass = Clasz.GetClaszByTableName(aTableName);
 		if (claszClass == null) return false;
-		String targetDbFieldName = aField.getDbFieldName();
-		if (targetDbFieldName == null) return false;
 		Class<?> walker = claszClass;
 		while (walker != null && walker != Object.class) {
 			for (java.lang.reflect.Field reflectField : walker.getDeclaredFields()) {
 				ReflectField annotation = reflectField.getAnnotation(ReflectField.class);
 				if (annotation == null) continue;
 				String reflectDbFieldName = Clasz.CreateDbFieldName(reflectField.getName(), "");
-				if (reflectDbFieldName.equals(targetDbFieldName)) {
+				if (reflectDbFieldName.equals(aDbFieldName)) {
 					for (ReflectIndex idx : annotation.indexes()) {
 						if (idx.ignoreCase()) return true;
 					}
