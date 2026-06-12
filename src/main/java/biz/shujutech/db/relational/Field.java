@@ -58,6 +58,7 @@ public class Field extends Base implements Comparable<Field> {
 	private boolean isIndexKey = false;
 	private SortOrder indexKeyOrder = SortOrder.ASC;
 	private int indexKeyNo = 0;
+	private boolean useLowerCase = false;
 
 	// object index properties
 	private boolean isObjectKey = false;
@@ -704,6 +705,14 @@ public class Field extends Base implements Comparable<Field> {
 		this.setIndexKey(aSourceField.isIndexKey());
 		this.setIndexKeyNo(aSourceField.getIndexKeyNo());
 		this.setIndexKeyOrder(aSourceField.getIndexKeyOrder());
+	}
+
+	public boolean isUseLowerCase() {
+		return useLowerCase;
+	}
+
+	public void setUseLowerCase(boolean useLowerCase) {
+		this.useLowerCase = useLowerCase;
 	}
 
 	//
